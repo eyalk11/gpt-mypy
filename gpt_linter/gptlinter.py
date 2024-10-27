@@ -1,4 +1,3 @@
-
 import os
 import xml
 
@@ -7,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 from gpt_linter.common import generate_diff
 from gpt_linter.guide import Guidance
-from gpt_linter.linter import MyPyLinter
+from gpt_linter.linter import MyPyLinter, CythonLinter
 
 from gpt_linter.logger import Logger
 logger=Logger()
@@ -26,16 +25,19 @@ from typing import List, Dict, Any, Optional, Iterator
 
 
 class GPTLinter:
-    def __init__(self,args: argparse.Namespace):
-        #move all the attributes of args to local variables
+    def __init__(self, args: argparse.Namespace):
         self.args = args
         self.file = args.file
         self.original_content = open(self.file, 'rt').read()
-
         self.debug = args.debug
-        self.linter = MyPyLinter()
+        
+        # Choose appropriate linter based on file extension
+        if self.file.endswith('.pyx') or self.file.endswith('.pxd'):
+            self.linter = CythonLinter()
+        else:
+            self.linter = MyPyLinter()
 
-    def get_new_content(self,err_res: Dict[str, Any]) -> Optional[str]:
+    def get_new_content(self, err_res: Dict[str, Any]) -> Optional[str]:
         fix_guide= Guidance.guide_for_fixes(self.args)
         fix_res=fix_guide(filename=self.file, file=self.original_content, fixes=err_res['fix'])
         if not 'fixedfile' in fix_res:
@@ -91,7 +93,7 @@ class GPTLinter:
 
 
 
-    def get_issues_string(self,issues: List[Dict[str, Any]]) -> Iterator[str]:
+    def get_issues_string(self, issues: List[Dict[str, Any]]) -> Iterator[str]:
         for issue in issues:
             try:
                 ln=int(issue['Line Number'])
@@ -125,7 +127,7 @@ class GPTLinter:
 
         self.try_to_solve_issues(errors)
 
-    def try_to_solve_issues(self,errors):
+    def try_to_solve_issues(self, errors):
         logger.info("trying to solve issues") 
         err_res = self.get_fixes(list(self.get_issues_string(errors)))
         new_content=self.get_new_content(err_res)
@@ -192,14 +194,22 @@ class GPTLinter:
 
 def main() -> None:
     # Create the argument parser
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description='Run mypy on a Python file and use OpenAI GPT to fix the errors. It temporary generates file.fixed.py file to check for errors. You probably want to provide project so that mypy could resolve dependencies.')
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description='Run type checking on Python/Cython files and use OpenAI GPT to fix the errors.')
+    
+    # Add existing arguments
+    parser.add_argument('file', help='Python or Cython file to check')
+    parser.add_argument('--proj-path', '-p', default='.', 
+                       help='Path to project (required for Cython compilation)')
+    
+    # Add Cython-specific arguments
+    parser.add_argument('--cython-args', nargs=argparse.REMAINDER,
+                       help='Additional options for Cython compilation')
+
     # Add the arguments
-    parser.add_argument('file', help='Python file to run mypy on')
     parser.add_argument('mypy_args', nargs=argparse.REMAINDER, help=f'Additional options for mypy after --. By default, uses {MYPYARGS}')
     parser.add_argument('--mypy-path', default='mypy', help='Path to mypy executable (default: "mypy")')
     parser.add_argument('--error_categories', action='store', help='Type of errors to process')
     parser.add_argument('--max_errors', action='store', type=int, default=10, help='Max number of errors to process per cycle')
-    parser.add_argument('-p','--proj-path', default='.', help='Path to project')
     parser.add_argument('-d','--diff-file', action='store', help='Store diff in diff file')
     parser.add_argument('-s','--store-fixed-file', action='store_true', default=False, help='Keeps file.fixed.py')
 
@@ -208,8 +218,8 @@ def main() -> None:
     parser.add_argument('-m','--model', default=DEFAULT_MODEL, help='Openai model to use')
     parser.add_argument('--max_tokens-per-fix', default=DEFAULT_TOKENS_PER_FIX, help='tokens to use for generating each fix')
     parser.add_argument('--temperature-per-fix', default=DEFAULT_TEMP_PER_FIX, help='temperature to use for fixes')
-    parser.add_argument('--max_tokens-for-file', default=DEFAULT_TOKENS, help='tokens to use for file')
-    parser.add_argument('--temperature-for-file', default=DEFAULT_TEMP, help='temperature to use for generating the file')
+    parser.add_argument('--max_tokens_for_file', default=DEFAULT_TOKENS, help='tokens to use for file')
+    parser.add_argument('--temperature_for_file', default=DEFAULT_TEMP, help='temperature to use for generating the file')
     parser.add_argument('-r','--recheck-policy', choices=['recheck','none','recheckandloop'],  default='recheckandloop',
                         help='Recheck the file for issues before suggesting a fix. require to temporarily save file.fixed.py (has to be in the project). recheckandloop will go for another loop if done fixing and there are still errors.')
 

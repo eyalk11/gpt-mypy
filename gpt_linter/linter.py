@@ -1,4 +1,3 @@
-
 import os
 import re
 import subprocess
@@ -93,3 +92,40 @@ class MyPyLinter(Linter):
 
             return {"Line Number": "", "Error Type": "", "Message": "", "Category": ""}
 
+
+class CythonLinter(Linter):
+    def run_checker(self, file: str, additional_args: List[str], program_path: str, proj_path: str) -> str:
+        # Construct the cython compilation command
+        command = ['python', 'setup.py', 'build_ext', '--inplace']
+        logger.debug("Running cython compilation command: %s", command)
+        
+        # Run compilation command and capture the output
+        result: CompletedProcess[str] = subprocess.run(command, 
+                                                     capture_output=True, 
+                                                     text=True, 
+                                                     cwd=os.path.abspath(proj_path))
+        
+        # Return both stdout and stderr since Cython errors appear in stderr
+        return result.stdout + result.stderr
+
+    @staticmethod
+    def parse_line(line: str) -> Dict[str, Any]:
+        # Pattern for Cython error messages
+        patterns = [
+            r'(.+?):(\d+):(\d+): (.+)',  # Matches file:line:col: message
+            r'Error compiling Cython file:',  # Matches compilation error header
+            r'------------------------------------------------------------'  # Matches separator
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, line)
+            if match and len(match.groups()) == 4:
+                file, line_num, col, message = match.groups()
+                return {
+                    "Line Number": line_num,
+                    "Error Type": "Cython Error",
+                    "Message": message,
+                    "Category": "compilation"
+                }
+        
+        return {"Line Number": "", "Error Type": "", "Message": "", "Category": ""}
