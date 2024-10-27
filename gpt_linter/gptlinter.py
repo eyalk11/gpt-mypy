@@ -93,16 +93,20 @@ class GPTLinter:
 
     def get_issues_string(self,issues: List[Dict[str, Any]]) -> Iterator[str]:
         for issue in issues:
-            ln=int(issue['Line Number'])
-            lines=self.original_content.split('\n')
-            line_range= '\n'.join( lines[ max(ln-1-1,0) :min(ln-1+1,len(lines))])
+            try:
+                ln=int(issue['Line Number'])
+                lines=self.original_content.split('\n')
+                line_range= '\n'.join( lines[ max(ln-1-1,0) :min(ln-1+1,len(lines))])
 
-            issue[f"lines {ln-1} to {ln} in the file"]='\n'+line_range
+                issue[f"lines {ln-1} to {ln} in the file"]='\n'+line_range
 
-            st='\n'.join(f"{k}: {v}" for k,v in issue.items())
+                st='\n'.join(f"{k}: {v}" for k,v in issue.items())
 
-            logger.debug(st)
-            yield st
+                logger.debug(st)
+                yield st
+            except:
+                logger.debug(issue)
+                continue
 
     def main(self) -> None:
         logger.setup_logger(self.debug)
@@ -149,9 +153,13 @@ class GPTLinter:
                 update=True
 
         elif not self.args.dont_ask:
-            print("do you want to override the file? (y/n)")
+            print("Press 'w' to write and quit. Press 'y' to write and continue testing, and 'q' to quit without writing.")
             if input() == 'y':
                 update=True
+            elif input() == 'w':
+                update=True
+                self.args.recheck_policy = 'none'
+
 
         if update:
             open(self.args.file, 'wt').write(new_content)

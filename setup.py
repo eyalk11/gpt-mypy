@@ -15,7 +15,7 @@ with pathlib.Path('requirements.txt').open() as requirements_txt:
 
 setup(
     name='gpt-linter',
-    version='1.0.0',
+    version='0.1.0',
     packages=['gpt_linter'],
     url='https://github.com/eyalk11/mypy-gpt',
     license=' AGPL-3.0 license',
