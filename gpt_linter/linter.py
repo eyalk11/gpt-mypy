@@ -90,7 +90,7 @@ class MyPyLinter(Linter):
         else:
             logger.debug(("No match found.", line))
 
-            return {"Line Number": "", "Error Type": "", "Message": "", "Category": ""}
+            return None
 
 
 class CythonLinter(Linter):
