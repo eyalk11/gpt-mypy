@@ -32,6 +32,10 @@ DEFAULT_PROVIDER = "anthropic"
 ANTHROPIC_DEFAULT_MODEL = "claude-3-5-sonnet-latest"
 DEFAULT_MODEL = "gpt-3.5-turbo-16k"
 
+# Add these constants at the top with other defaults
+DEFAULT_TEMPERATURE = 0.2
+DEFAULT_MAX_TOKENS = 8000
+
 # Add this with other global constants at the top of the file
 
 CHUNK_SIZE = 30  # Number of errors to process in each batch
@@ -53,16 +57,32 @@ class GPTLinter:
             self.linter = CythonLinter()
         else:
             self.linter = MyPyLinter()
+        self.lines = self.current_content.split('\n')
+    @staticmethod
+    def escape_marked_sections(content: str) -> str:
+            """Escape XML content between ### markers."""
+            import re
+            from xml.sax.saxutils import escape
+            
+            def escape_match(match):
+                inner = match.group(1)
+                return f"{escape(inner)}"
+                
+            pattern = r">[\n\t]*###(.*?)###[\n\t]*<"
+            return re.sub(pattern, escape_match, content, flags=re.DOTALL)
 
     @simple_exception_handling(err_description="Failed to get new content", return_succ=None)
-    def get_new_content(self, fixes: Dict[str, Any]) -> Optional[str]:
+    def get_new_content(self, fixes: Dict[str, Any], issues: List[str]) -> Optional[str]:
         fix_guide= Guidance.guide_for_fixes(self.args)
-        fix_res=fix_guide( file=self.current_content, fixes=fixes)
+        fix_res=fix_guide(file=self.current_content, issues_and_fixes=zip(issues,fixes) )
+        lines = self.current_content.split('\n')
         if not 'fixedfile' in fix_res:
             logger.error('no fixed file')
             return None
         fixed = fix_res['fixedfile']
         logger.debug(f'fixed file: {fixed}')
+        fixed= self.escape_marked_sections(fixed)
+        logger.debug(f'fixed file escaped: {fixed}')
         #bb = json.loads(fix_res["fixedfile"])['file']
         for k in range(3):
 
@@ -138,10 +158,10 @@ class GPTLinter:
                 # Search in a reasonable range around the suggested line numbers
                 search_range = 20  # Adjust this value as needed
                 search_start = max(0, start - search_range)
-                search_end = min(len(lines), end + search_range + 1)
+                search_end = min(len(self.lines), end + search_range + 1)
                 
                 for i in range(search_start, search_end - window_size + 1):
-                    window = ''.join(c for c in '\n'.join(lines[i:i + window_size]) if c.isalnum() or c.isspace())
+                    window = ''.join(c for c in '\n'.join(self.lines[i:i + window_size]) if c.isalnum() or c.isspace())
                     if window == old_code:
                         # Calculate distance from suggested position
                         distance = abs(i - start)
@@ -150,9 +170,9 @@ class GPTLinter:
                             actual_start = i
                 
                 # Replace the lines at the found position
-                lines[actual_start:actual_start + window_size] = new_lines
+                self.lines[actual_start:actual_start + window_size] = new_lines
                 
-            return '\n'.join(lines)
+            return '\n'.join(self.lines)
             
         except Exception as e:
             logger.error(f'Failed to process content: {e}')
@@ -283,8 +303,9 @@ class GPTLinter:
     @simple_exception_handling(err_description="Failed to process error chunk", return_succ=None)
     def process_error_chunk(self, chunk, all_errors):
         """Process a chunk of errors and return remaining errors or None if processing should stop."""
-        err_res = self.get_fixes(list(self.get_issues_string(chunk)))
-        new_content = self.get_new_content(err_res)
+        errors=list(self.get_issues_string(chunk)) 
+        err_res = self.get_fixes(errors)
+        new_content = self.get_new_content(err_res,errors)
         
         if new_content is None:
             logger.error('cant continue')
@@ -458,6 +479,11 @@ def main() -> None:
    
     parser.add_argument('--stash', action='store_true', help='Stash changes before applying fixes')
     parser.add_argument('--chunk-size', type=int, default=3, help='Number of errors to process in each chunk')
+    # Modify the argument parser section
+    parser.add_argument('--temperature', type=float, default=DEFAULT_TEMPERATURE, 
+                       help='Temperature to use for all generations')
+    parser.add_argument('--max-tokens', type=int, default=DEFAULT_MAX_TOKENS,
+                       help='Max tokens to use for all generations')
     # Parse the arguments
     args: argparse.Namespace = parser.parse_args()
     if args.provider == 'anthropic' and args.model is None:

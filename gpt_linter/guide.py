@@ -3,11 +3,7 @@ import anthropic
 from guidance import models, gen, user, system, assistant
 import guidance
 
-
 import logging
-import os
-from guidance import models, gen, user, system, assistant
-import guidance
 import ratelimit
 from ratelimit import limits, RateLimitException
 from backoff import on_exception, expo
@@ -24,6 +20,7 @@ def mygen(*args, **kwargs):
 
 class Guidance:
     llm = None
+    
     @staticmethod
     def set_key(args):
         if args.provider == 'anthropic':
@@ -49,7 +46,15 @@ class Guidance:
         except anthropic.RateLimitError as e:
             logging.error(f"An error occurred: {str(e)}")
             raise RateLimitException(f"An error occurred: {str(e)}", period_remaining=60)
+    
+    @classmethod #operator * to do Safer_concat
+    def __mul__(cls, addition):
+        cls.safe_concat(addition)
+        return cls
 
+    @classmethod
+    def apply(cls,*args,**kwargs):
+        cls.safe_concat( mygen(*args,**kwargs))
     @classmethod
     def guide_for_errors(cls, args):
         def error_handler(filename, file, error):
@@ -59,10 +64,10 @@ class Guidance:
                 Be sure to inspect the entire relevant context in the file before suggesting a fix.
                 Be short and precise regarding the fix, and refer to the change in code. 
                 In your answer, you shouldn't repeat instructions given to you, and you shouldn't include many lines of code.
-                If you dont know the answer, just say NOFIX.''')
-            
+                If you don't know the answer, just say NOFIX.''')
+
             with assistant():
-                cls.safe_concat(mygen('fix', list_append=True, temperature=args.temperature_per_fix, max_tokens=args.max_tokens_per_fix))
+                cls.safe_concat(mygen('fix', list_append=True, temperature=args.temperature, max_tokens=args.max_tokens))
 
         def create_program(filename, file, errors, reference_file=None):
             with system():
@@ -85,32 +90,33 @@ class Guidance:
 
     @classmethod
     def guide_for_fixes(cls, args):
-        def create_program(file, fixes):
+        def create_program(file, issues_and_fixes):
             with system():
-                cls.safe_concat('''You are a helpful assistant. You will be given a list of corrections to do in a file, 
+                cls.safe_concat('''You are a helpful assistant. You will be given a list of issues and their corrections to do in a file, 
                 and will update the file accordingly.
                 Reply only with xml that has the following format:
                 ```xml
                 <file>
                     <codsection startline="STARTLINE" endline="ENDLINE">
-                        <oldlines>original code that will be replaced</oldlines>
-                        <newlines>new code that replaces the old code</newlines>
+                        <oldlines>###original code that will be replaced###</oldlines>
+                        <newlines>###new code that replaces the old code###</newlines>
                     </codsection>
                     <codsection startline="line2" endline="endline2">
-                        <oldlines>original code section 2</oldlines>
-                        <newlines>new code section 2</newlines>
+                        <oldlines>###original code section 2###</oldlines>
+                        <newlines>###new code section 2###</newlines>
                     </codsection>
                     ...
-                </file>                                            
+                </file>
                 ```
                 
                 ''')
 
             with user():
+                ff= '\n'.join(f"- Issue: {issue_fix[0]}\n  Fix: {issue_fix[1]}" for issue_fix in issues_and_fixes)
                 cls.safe_concat(f'''This is the file:
                 {file}
-                Those are the fixes:
-                {chr(10).join(f"- {fix}" for fix in fixes)}
+                Those are the issues and their fixes:
+                {ff}
                 Make sure you apply all the corrections in the resulted file. 
                 You should take note of all the relevant places you need to fix.
 

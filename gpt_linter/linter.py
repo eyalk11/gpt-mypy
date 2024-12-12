@@ -35,11 +35,13 @@ class Linter(metaclass=ABCMeta):
         df_first_row['Message'].update(changed_message_df)
         df_first_row = df_first_row.reset_index()
         issues = [dict(r[1]) for r in df_first_row.iterrows()]
+        issues = [issue for issue in issues if re.search(r'\w{3}', issue['Message'])]
 
         if args.max_errors:
             issues = issues[:args.max_errors]
         if args.error_categories:
             issues = [z for z in issues if z['Category'] in args.error_categories.split(',')]
+        #issues = filter(lambda x : x['line_number'])
         return issues
 
 
